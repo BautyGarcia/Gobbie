@@ -58,3 +58,34 @@ def extract_wav2vec(metadata: pd.DataFrame,
     arr = np.vstack(embeddings).astype("float32")
     cols = [f"wav2vec_{i}" for i in range(arr.shape[1])]
     return pd.DataFrame(arr, index=pd.Index(paths, name="path"), columns=cols)
+
+
+def extract_wav2vec_layers(metadata: pd.DataFrame,
+                           model_name: str = "facebook/wav2vec2-base",
+                           device: str = None):
+    """Embeddings mean-pooled de TODAS las capas del modelo SSL.
+
+    Devuelve (emb, paths):
+    - emb: np.ndarray float32 de shape (n_audios, n_layers, hidden) con el mean-pool
+      temporal de cada capa (output_hidden_states). Para wav2vec2-base: (n, 13, 768).
+    - paths: lista de paths en el mismo orden que la metadata de entrada.
+    Determinista en eval() + sin gradientes.
+    """
+    device = _pick_device(device)
+    feature_extractor = AutoFeatureExtractor.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name).to(device).eval()
+
+    paths = metadata["path"].tolist()
+    out = []
+    with torch.no_grad():
+        for p in paths:
+            audio = _load_audio(p)
+            inputs = feature_extractor(audio, sampling_rate=TARGET_SR, return_tensors="pt")
+            input_values = inputs.input_values.to(device)
+            hidden_states = model(input_values, output_hidden_states=True).hidden_states
+            # mean-pool temporal de cada capa -> (n_layers, hidden)
+            layer_means = torch.stack([h.mean(dim=1).squeeze(0) for h in hidden_states], dim=0)
+            out.append(layer_means.cpu().numpy())
+
+    emb = np.stack(out, axis=0).astype("float32")   # (n, n_layers, hidden)
+    return emb, paths
