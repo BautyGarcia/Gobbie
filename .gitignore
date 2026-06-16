@@ -1,0 +1,14 @@
+# Datos generados / pesados
+data/processed/
+reports/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/
+docs/
+data/
