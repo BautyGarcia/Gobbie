@@ -33,10 +33,13 @@ def _load_audio(path):
 
 def extract_wav2vec(metadata: pd.DataFrame,
                     model_name: str = "facebook/wav2vec2-base",
-                    device: str = None) -> pd.DataFrame:
-    """Embeddings SSL mean-pooled por audio.
+                    device: str = None,
+                    layer: int = 8) -> pd.DataFrame:
+    """Embeddings SSL mean-pooled por audio, de la capa `layer`.
 
     Devuelve un DataFrame (n, hidden_size) indexado por path (mismo orden que la entrada).
+    `layer` (default 8) indexa en output_hidden_states: la capa 8 es la mejor para emoción
+    según el barrido (las últimas capas están sesgadas al objetivo de pre-entrenamiento).
     Determinista: el modelo corre en eval() y sin gradientes (no hay dropout activo).
     Sirve para cualquier subconjunto (speech, song o todos).
     """
@@ -51,7 +54,7 @@ def extract_wav2vec(metadata: pd.DataFrame,
             audio = _load_audio(p)
             inputs = feature_extractor(audio, sampling_rate=TARGET_SR, return_tensors="pt")
             input_values = inputs.input_values.to(device)
-            hidden = model(input_values).last_hidden_state    # (1, T, H)
+            hidden = model(input_values, output_hidden_states=True).hidden_states[layer]  # (1, T, H)
             emb = hidden.mean(dim=1).squeeze(0).cpu().numpy()  # (H,)
             embeddings.append(emb)
 
