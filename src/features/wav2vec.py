@@ -63,6 +63,18 @@ def extract_wav2vec(metadata: pd.DataFrame,
     return pd.DataFrame(arr, index=pd.Index(paths, name="path"), columns=cols)
 
 
+def layers_to_dataframe(emb, paths, layers) -> pd.DataFrame:
+    """Concatena las capas `layers` del array (n, n_layers, hidden) → DataFrame (n, len(layers)*hidden).
+
+    `emb` es la salida de `extract_wav2vec_layers` (mean-pool por capa). Columnas nombradas
+    wav2vec_l{capa}_{i} e índice = paths. Permite armar representaciones multi-capa (p.ej. las
+    top-3 del barrido) sin re-extraer el modelo.
+    """
+    sel = emb[:, layers, :].reshape(emb.shape[0], -1)
+    cols = [f"wav2vec_l{l}_{i}" for l in layers for i in range(emb.shape[2])]
+    return pd.DataFrame(sel.astype("float32"), index=pd.Index(paths, name="path"), columns=cols)
+
+
 def extract_wav2vec_layers(metadata: pd.DataFrame,
                            model_name: str = "facebook/wav2vec2-base",
                            device: str = None):
@@ -92,3 +104,35 @@ def extract_wav2vec_layers(metadata: pd.DataFrame,
 
     emb = np.stack(out, axis=0).astype("float32")   # (n, n_layers, hidden)
     return emb, paths
+
+
+def extract_wav2vec_frames(metadata: pd.DataFrame,
+                           model_name: str = "facebook/wav2vec2-base",
+                           device: str = None,
+                           layers=(8,)):
+    """Embeddings POR FRAME (sin pooling temporal) de las capas `layers`, concatenadas por frame.
+
+    Devuelve (seqs, paths):
+    - seqs: lista de arrays float32 (T_i, hidden*len(layers)), uno por audio. T_i varía con la
+      duración (wav2vec2 produce ~50 frames/seg). Es la "película" completa que necesita el modelo
+      de secuencia (CRNN/RNN/atención) para aprender su propio pooling temporal. Con varias capas,
+      cada frame es la concatenación de esas capas (igual idea que `layers_to_dataframe`, pero
+      conservando el eje temporal).
+    - paths: lista de paths en el mismo orden que la metadata de entrada.
+    Determinista en eval() + sin gradientes.
+    """
+    device = _pick_device(device)
+    feature_extractor = AutoFeatureExtractor.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name).to(device).eval()
+
+    paths = metadata["path"].tolist()
+    seqs = []
+    with torch.no_grad():
+        for p in paths:
+            audio = _load_audio(p)
+            inputs = feature_extractor(audio, sampling_rate=TARGET_SR, return_tensors="pt")
+            input_values = inputs.input_values.to(device)
+            hs = model(input_values, output_hidden_states=True).hidden_states
+            sel = torch.cat([hs[l].squeeze(0) for l in layers], dim=-1)  # (T, H*len(layers))
+            seqs.append(sel.cpu().numpy().astype("float32"))
+    return seqs, paths
