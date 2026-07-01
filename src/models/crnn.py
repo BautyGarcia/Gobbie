@@ -1,10 +1,3 @@
-"""CRNN sobre secuencias frame-level de wav2vec, con interfaz sklearn (fit/predict).
-
-Combina los tres tipos de capa (convolucional + recurrente + densa) más attention pooling:
-Conv1D (patrones locales entre frames) → BiGRU (dinámica temporal) → atención (qué frames
-importan) → densa. Acepta X como lista de arrays (T_i, feat) de largo variable; entra a
-grouped_cv igual que el resto de los modelos.
-"""
 import numpy as np
 import torch
 import torch.nn as nn
@@ -15,8 +8,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from src import config
 
-
-def _device(device=None):
+def pick_device(device=None):
     if device is not None:
         return device
     if torch.backends.mps.is_available():
@@ -25,12 +17,8 @@ def _device(device=None):
         return "cuda"
     return "cpu"
 
-
 class CRNNNet(nn.Module):
-    """Conv1D → BiGRU → attention pooling → densa."""
-
-    def __init__(self, in_dim, n_classes, conv_channels=256, rnn_hidden=128,
-                 kernel=5, dropout=0.3):
+    def __init__(self, in_dim, n_classes, conv_channels=256, rnn_hidden=128, kernel=5, dropout=0.3):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv1d(in_dim, conv_channels, kernel_size=kernel, padding=kernel // 2),
@@ -42,18 +30,15 @@ class CRNNNet(nn.Module):
         self.head = nn.Linear(2 * rnn_hidden, n_classes)
 
     def forward(self, x, lengths):
-        h = self.conv(x.transpose(1, 2)).transpose(1, 2)          # (B, T, C)
-        packed = nn.utils.rnn.pack_padded_sequence(
-            h, lengths.cpu(), batch_first=True, enforce_sorted=False)
+        h = self.conv(x.transpose(1, 2)).transpose(1, 2)
+        packed = nn.utils.rnn.pack_padded_sequence(h, lengths.cpu(), batch_first=True, enforce_sorted=False)
         out, _ = self.rnn(packed)
-        out, _ = nn.utils.rnn.pad_packed_sequence(out, batch_first=True)  # (B, T, 2H)
-        # atención con máscara de padding (ignora los frames de relleno)
+        out, _ = nn.utils.rnn.pad_packed_sequence(out, batch_first=True)
         mask = torch.arange(out.size(1), device=out.device)[None, :] < lengths[:, None].to(out.device)
-        score = self.attn(out).squeeze(-1).masked_fill(~mask, float("-inf"))  # (B, T)
-        w = torch.softmax(score, dim=1).unsqueeze(-1)             # (B, T, 1)
-        ctx = (out * w).sum(dim=1)                                # (B, 2H)
+        score = self.attn(out).squeeze(-1).masked_fill(~mask, float("-inf"))
+        w = torch.softmax(score, dim=1).unsqueeze(-1)
+        ctx = (out * w).sum(dim=1)
         return self.head(self.drop(ctx))
-
 
 class _SeqDataset(Dataset):
     def __init__(self, seqs, y):
@@ -65,9 +50,7 @@ class _SeqDataset(Dataset):
     def __getitem__(self, i):
         return self.seqs[i], self.y[i]
 
-
-def _collate(batch):
-    """Padea las secuencias del batch al largo máximo y devuelve (padded, lengths, y)."""
+def collate(batch):
     seqs, ys = zip(*batch)
     lengths = torch.tensor([len(s) for s in seqs])
     feat = np.asarray(seqs[0]).shape[1]
@@ -76,14 +59,8 @@ def _collate(batch):
         padded[i, :len(s)] = torch.from_numpy(np.asarray(s, dtype="float32"))
     return padded, lengths, torch.tensor(np.asarray(ys))
 
-
 class CRNNClassifier(BaseEstimator, ClassifierMixin):
-    """CRNN con interfaz sklearn. Entrena con early stopping sobre un val interno y predice
-    etiquetas (strings de emoción). Espera X como lista de arrays (T_i, feat)."""
-
-    def __init__(self, conv_channels=256, rnn_hidden=128, kernel=5, dropout=0.3,
-                 lr=1e-3, weight_decay=1e-4, batch_size=32, max_epochs=60, patience=8,
-                 val_frac=0.15, class_weight="balanced", seed=config.RANDOM_SEED, device=None):
+    def __init__(self, conv_channels=256, rnn_hidden=128, kernel=5, dropout=0.3, lr=1e-3, weight_decay=1e-4, batch_size=32, max_epochs=60, patience=8, val_frac=0.15, class_weight="balanced", seed=config.RANDOM_SEED, device=None):
         self.conv_channels = conv_channels
         self.rnn_hidden = rnn_hidden
         self.kernel = kernel
@@ -98,14 +75,14 @@ class CRNNClassifier(BaseEstimator, ClassifierMixin):
         self.seed = seed
         self.device = device
 
-    def _loader(self, seqs, yi, shuffle):
+    def loader(self, seqs, yi, shuffle):
         return DataLoader(_SeqDataset(seqs, yi), batch_size=self.batch_size,
-                          shuffle=shuffle, collate_fn=_collate)
+                          shuffle=shuffle, collate_fn=collate)
 
     def fit(self, X, y):
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
-        dev = _device(self.device)
+        dev = pick_device(self.device)
 
         seqs = list(X)
         y = np.asarray(y)
@@ -115,8 +92,8 @@ class CRNNClassifier(BaseEstimator, ClassifierMixin):
 
         tr, va = train_test_split(np.arange(len(seqs)), test_size=self.val_frac,
                                   random_state=self.seed, stratify=yi)
-        tr_loader = self._loader([seqs[i] for i in tr], yi[tr], shuffle=True)
-        va_loader = self._loader([seqs[i] for i in va], yi[va], shuffle=False)
+        tr_loader = self.loader([seqs[i] for i in tr], yi[tr], shuffle=True)
+        va_loader = self.loader([seqs[i] for i in va], yi[va], shuffle=False)
 
         weight = None
         if self.class_weight == "balanced":
@@ -135,9 +112,9 @@ class CRNNClassifier(BaseEstimator, ClassifierMixin):
             self.net_.train()
             for padded, lengths, yb in tr_loader:
                 opt.zero_grad()
-                loss = loss_fn(self.net_(padded.to(dev), lengths), yb.to(dev))   # forward
-                loss.backward()                                                  # backward
-                opt.step()                                                       # step
+                loss = loss_fn(self.net_(padded.to(dev), lengths), yb.to(dev))
+                loss.backward()
+                opt.step()
             self.net_.eval()
             correct = total = 0
             with torch.no_grad():
@@ -161,12 +138,12 @@ class CRNNClassifier(BaseEstimator, ClassifierMixin):
         return self
 
     def predict(self, X):
-        dev = _device(self.device)
+        dev = pick_device(self.device)
         seqs = list(X)
-        loader = self._loader(seqs, np.zeros(len(seqs), dtype=int), shuffle=False)
+        loader_ = self.loader(seqs, np.zeros(len(seqs), dtype=int), shuffle=False)
         self.net_.eval()
         preds = []
         with torch.no_grad():
-            for padded, lengths, _ in loader:
+            for padded, lengths, _ in loader_:
                 preds.append(self.net_(padded.to(dev), lengths).argmax(1).cpu().numpy())
         return self.classes_[np.concatenate(preds)]

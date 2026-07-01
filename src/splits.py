@@ -12,10 +12,6 @@ def make_split(
     seed: int = config.RANDOM_SEED,
     out_path: Path = config.SPLIT_PATH,
 ) -> dict:
-    """Crea un split train/val a nivel de actor, balanceado por género, y lo guarda en JSON.
-
-    Speaker-independent: cada actor cae enteramente en train o en val (cubre ambos canales).
-    """
     actors = metadata[["actor", "gender"]].drop_duplicates()
     rng = np.random.default_rng(seed)
 
@@ -42,11 +38,9 @@ def make_split(
     return split
 
 def load_split(path: Path = config.SPLIT_PATH) -> dict:
-    """Carga el split congelado desde disco."""
     return json.loads(Path(path).read_text())
 
 def assign_split(metadata: pd.DataFrame, split: dict) -> pd.DataFrame:
-    """Devuelve una copia de metadata con una columna 'split' (train/val) por fila."""
     val_set = set(split["val_actors"])
     out = metadata.copy()
     out["split"] = np.where(out["actor"].isin(val_set), "val", "train")

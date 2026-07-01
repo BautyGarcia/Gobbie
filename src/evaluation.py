@@ -1,4 +1,3 @@
-"""Cross-validation por hablante (GroupKFold). Agnóstico a las features y al modelo."""
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
@@ -6,18 +5,7 @@ from sklearn.model_selection import GroupKFold
 
 from src.metrics import evaluate
 
-
 def grouped_cv(estimator, X, y, groups, n_splits: int = 5):
-    """Corre GroupKFold(groups=actor) y devuelve (oof_pred, fold_metrics).
-
-    - oof_pred: Series con la predicción out-of-fold de cada muestra (cada muestra
-      se predice exactamente una vez, en el fold donde su grupo es test).
-    - fold_metrics: lista de dicts (uno por fold) con las métricas de `evaluate`.
-    El estimador se clona en cada fold (no se reutiliza el mismo objeto entrenado).
-
-    `X` puede ser tabular (DataFrame/2D) o una lista de secuencias de largo variable
-    (una lista/object-array de arrays, p.ej. embeddings frame-level para el CRNN).
-    """
     y = pd.Series(list(y)).reset_index(drop=True)
     groups = pd.Series(np.asarray(groups)).reset_index(drop=True)
 
@@ -41,14 +29,7 @@ def grouped_cv(estimator, X, y, groups, n_splits: int = 5):
         fold_metrics.append(evaluate(y.iloc[test_idx], pred))
     return oof_pred, fold_metrics
 
-
 def grouped_cv_proba(estimator, X, y, groups, classes, n_splits: int = 5):
-    """Como grouped_cv pero devuelve la matriz de probabilidades out-of-fold (n, n_clases),
-    con columnas en el orden de `classes`. Para ensembles por soft-voting (promediar probas).
-
-    Requiere que el estimador exponga `predict_proba` y `classes_` (LogReg, MLP, etc.).
-    `X` debe ser tabular (DataFrame). Mismo split GroupKFold por actor que `grouped_cv`.
-    """
     X = pd.DataFrame(X).reset_index(drop=True)
     y = np.asarray(y)
     groups = np.asarray(groups)

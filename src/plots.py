@@ -1,11 +1,8 @@
-"""Gráficos reutilizables para evaluación de modelos."""
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
 
-
 def plot_confusion_matrix(y_true, y_pred, labels=None, normalize=None, ax=None, title=None):
-    """Matriz de confusión. normalize=None (conteos) o "true" (recall por fila)."""
     cm = confusion_matrix(y_true, y_pred, labels=labels, normalize=normalize)
     if ax is None:
         fig, ax = plt.subplots(figsize=(7, 6))

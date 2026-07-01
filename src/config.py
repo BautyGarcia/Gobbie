@@ -11,10 +11,8 @@ SPLIT_PATH = SPLITS_DIR / "split.json"
 
 RANDOM_SEED = 42
 
-# Mejores capas de wav2vec para emoción, según el barrido (notebook, sección capas).
 WAV2VEC_TOP_LAYERS = [8, 6, 7]
 
-# Mapas del esquema de nombres RAVDESS (campo -> significado)
 MODALITY_MAP = {"01": "full-AV", "02": "video-only", "03": "audio-only"}
 VOCAL_CHANNEL_MAP = {"01": "speech", "02": "song"}
 EMOTION_MAP = {
@@ -26,11 +24,9 @@ STATEMENT_MAP = {"01": "kids", "02": "dogs"}
 
 
 def actor_gender(actor: int) -> str:
-    """Actor impar = male, par = female (convención RAVDESS)."""
     return "male" if actor % 2 == 1 else "female"
 
 
-# Columnas de metadata (todo lo demás en un dataset combinado son features)
 META_COLS = [
     "path", "modality", "vocal_channel", "emotion", "intensity",
     "statement", "repetition", "actor", "gender", "split",
