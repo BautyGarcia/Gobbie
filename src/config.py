@@ -6,6 +6,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 SPEECH_DIR = DATA_DIR / "Audio_Speech_Actors_01-24"
 SONG_DIR = DATA_DIR / "Audio_Song_Actors_01-24"
 PROCESSED_DIR = DATA_DIR / "processed"
+EMODB_DIR = DATA_DIR / "emodb_raw" / "extracted" / "wav"
 SPLITS_DIR = PROJECT_ROOT / "splits"
 SPLIT_PATH = SPLITS_DIR / "split.json"
 
