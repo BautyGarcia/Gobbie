@@ -1,0 +1,23 @@
+@font-face {
+  font-family: 'Baloo 2';
+  font-style: normal;
+  font-weight: 500 800;
+  font-display: swap;
+  src: url('baloo2-variable.woff2') format('woff2-variations'), url('baloo2-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('inter-variable.woff2') format('woff2-variations'), url('inter-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('jbmono-variable.woff2') format('woff2-variations'), url('jbmono-variable.woff2') format('woff2');
+}

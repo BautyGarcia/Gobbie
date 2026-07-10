@@ -1,0 +1,1183 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gobbie — detector de emociones</title>
+<link rel="stylesheet" href="/assets/fonts/fonts.css">
+<style>
+  @property --state-color {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: oklch(0.75 0.02 275);
+  }
+  @property --state-ink {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: oklch(0.42 0.03 275);
+  }
+
+  :root {
+    --bg:            oklch(0.985 0 0);
+    --surface:       oklch(0.975 0.006 27);
+    --surface-2:     oklch(0.92 0.01 27);
+    --stage-card:    oklch(0.965 0.008 35);
+    --stroke:        oklch(0.89 0.012 27);
+    --ink:           oklch(0.24 0.015 27);
+    --ink-muted:     oklch(0.46 0.02 27);
+    --ink-faint:     oklch(0.54 0.02 27);
+
+    --brand:         oklch(0.66 0.19 27);
+    --brand-strong:  oklch(0.58 0.20 27);
+    --ink-on-brand:  oklch(0.20 0.02 27);
+
+    --e-neutral:      oklch(0.75 0.02 275);
+    --e-neutral-ink:  oklch(0.42 0.03 275);
+    --e-calm:         oklch(0.76 0.10 200);
+    --e-calm-ink:     oklch(0.48 0.13 200);
+    --e-happy:        oklch(0.83 0.15 95);
+    --e-happy-ink:    oklch(0.50 0.14 95);
+    --e-sad:          oklch(0.62 0.14 260);
+    --e-sad-ink:      oklch(0.44 0.16 260);
+    --e-angry:        oklch(0.62 0.18 22);
+    --e-angry-ink:    oklch(0.46 0.19 22);
+    --e-fearful:      oklch(0.62 0.15 300);
+    --e-fearful-ink:  oklch(0.44 0.17 300);
+    --e-disgust:      oklch(0.68 0.13 145);
+    --e-disgust-ink:  oklch(0.42 0.13 145);
+    --e-surprised:    oklch(0.75 0.16 55);
+    --e-surprised-ink: oklch(0.46 0.17 55);
+
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+
+    --state-color: var(--e-neutral);
+    --state-ink: var(--e-neutral-ink);
+    transition: --state-color 600ms cubic-bezier(.25,1,.5,1), --state-ink 600ms cubic-bezier(.25,1,.5,1);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  .bg-blob {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(70px);
+    pointer-events: none;
+    z-index: -1;
+    transition: background-color 600ms ease;
+  }
+  .bg-blob--a { width: 40vw; height: 40vw; top: -18%; left: -14%; background: var(--brand); opacity: 0.09; }
+  .bg-blob--b { width: 34vw; height: 34vw; bottom: -20%; left: 20%; background: var(--state-color); opacity: 0.16; }
+  .bg-blob--c { width: 24vw; height: 24vw; top: -10%; right: -6%; background: var(--state-color); opacity: 0.10; }
+
+  /* ---------- shell: asymmetric split ---------- */
+
+  .app {
+    display: grid;
+    grid-template-columns: clamp(320px, 41vw, 560px) 1fr;
+    height: 100dvh;
+    width: 100vw;
+    padding: clamp(16px, 2.4vh, 30px) clamp(22px, 3.6vw, 52px);
+    gap: clamp(20px, 4vw, 64px);
+  }
+
+  /* ---------- left: Gobbie ---------- */
+
+  .gobbie-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .brand {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    background: none;
+    border: none;
+    padding: 4px 6px 4px 0;
+    margin: -4px 0 -4px -6px;
+    border-radius: 12px;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+  .brand:hover { opacity: 0.72; }
+  .brand:active { opacity: 0.55; }
+  .brand-mark {
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 800;
+    font-size: clamp(1.35rem, 2.1vw, 1.7rem);
+    letter-spacing: -0.015em;
+    line-height: 1;
+    color: var(--ink);
+  }
+  .brand-tag { font-size: 0.8rem; color: var(--ink-faint); }
+
+  .gobbie-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(10px, 2vh, 20px);
+  }
+
+  .gobbie-bubble {
+    position: relative;
+    z-index: 2;
+    max-width: min(90%, 340px);
+    background: var(--surface);
+    color: var(--ink);
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 600;
+    font-size: clamp(1.02rem, 1.5vw, 1.28rem);
+    line-height: 1.24;
+    text-align: center;
+    text-wrap: balance;
+    padding: clamp(11px, 1.5vh, 16px) clamp(16px, 1.6vw, 22px);
+    border-radius: 20px;
+    box-shadow:
+      0 12px 26px -14px oklch(0.4 0.06 27 / 0.32),
+      0 2px 6px -3px oklch(0.4 0.06 27 / 0.14);
+    transform-origin: center bottom;
+  }
+  .gobbie-bubble::after {
+    content: "";
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 18px;
+    height: 18px;
+    background: var(--surface);
+    border-radius: 0 0 6px 0;
+    box-shadow: 3px 3px 6px -3px oklch(0.4 0.06 27 / 0.16);
+  }
+  .gobbie-bubble.pop { animation: bubble-pop 430ms cubic-bezier(.34,1.56,.64,1); }
+  @keyframes bubble-pop {
+    0%   { transform: scale(.72); opacity: 0; }
+    60%  { transform: scale(1.04); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+
+  .stage-glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(46vh, 520px);
+    height: min(46vh, 520px);
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, var(--state-color) 0%, transparent 70%);
+    opacity: 0.6;
+    filter: blur(22px);
+    pointer-events: none;
+  }
+
+  .gobbie-frame {
+    position: relative;
+    height: min(100%, 60vh);
+    max-height: 560px;
+    aspect-ratio: 9 / 16;
+    border-radius: 28px;
+    overflow: hidden;
+    background: var(--stage-card);
+    box-shadow:
+      0 30px 55px -24px oklch(0.4 0.06 27 / 0.34),
+      0 5px 16px -6px oklch(0.4 0.06 27 / 0.16);
+  }
+
+  .gobbie-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 260ms ease-out;
+  }
+  .gobbie-video.is-active { opacity: 1; }
+
+  /* ---------- right: morphing panel ---------- */
+
+  .panel-col {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    padding-block: clamp(4px, 1vh, 14px);
+  }
+
+  .panel-head {
+    display: flex;
+    justify-content: flex-end;
+    flex-shrink: 0;
+  }
+
+  .mic-row { display: flex; align-items: center; gap: 8px; color: var(--ink-faint); font-size: 0.85rem; min-width: 0; }
+  #micSelect {
+    background: var(--surface);
+    color: var(--ink-muted);
+    border: 1.5px solid var(--stroke);
+    border-radius: 999px;
+    padding: 7px 14px;
+    font-family: inherit;
+    font-size: 0.82rem;
+    max-width: min(260px, 30vw);
+  }
+
+  .panel-scene {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  .scene { display: none; flex-direction: column; min-height: 0; }
+  .app[data-state="idle"] .scene-intro,
+  .app[data-state="listening"] .scene-intro,
+  .app[data-state="processing"] .scene-intro { display: flex; }
+  .app[data-state="result"] .scene-result { display: flex; }
+
+  /* --- intro / listening / processing --- */
+
+  .scene-intro {
+    flex: 1;
+    justify-content: center;
+    gap: clamp(20px, 3.4vh, 40px);
+    max-width: 46ch;
+  }
+  .intro-lead { display: flex; flex-direction: column; gap: var(--space-4); }
+
+  .intro-emotions { display: none; flex-direction: column; gap: clamp(10px, 1.6vh, 16px); }
+  .app[data-state="idle"] .intro-emotions { display: flex; }
+  .intro-emotions-label {
+    font-size: clamp(0.82rem, 1.05vw, 0.96rem);
+    font-weight: 600;
+    color: var(--ink-faint);
+  }
+  .chip-row { display: flex; flex-wrap: wrap; gap: clamp(8px, 0.8vw, 12px); }
+  .emotion-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: clamp(7px, 1vh, 10px) clamp(12px, 1.1vw, 16px);
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1.5px solid var(--stroke);
+    font-size: clamp(0.9rem, 1.15vw, 1.05rem);
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .chip-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+  .intro-heading {
+    margin: 0;
+    max-width: 16ch;
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 800;
+    font-size: clamp(2.2rem, 4.2vw, 3.4rem);
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+  .intro-sub { max-width: 34ch; }
+  .app[data-state="listening"] .intro-heading,
+  .app[data-state="processing"] .intro-heading { color: var(--state-ink); }
+
+  .intro-sub {
+    margin: 0;
+    font-size: clamp(1rem, 1.35vw, 1.18rem);
+    line-height: 1.5;
+    color: var(--ink-muted);
+    max-width: 44ch;
+  }
+
+  .listen-dots { display: none; gap: 7px; align-items: center; height: 14px; }
+  .app[data-state="listening"] .listen-dots,
+  .app[data-state="processing"] .listen-dots { display: flex; }
+  .listen-dots span {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--state-ink);
+    animation: dot-bounce 1.1s ease-in-out infinite;
+  }
+  .listen-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .listen-dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes dot-bounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+    40%           { transform: translateY(-7px); opacity: 1; }
+  }
+
+  /* --- result --- */
+
+  .scene-result {
+    flex: 1;
+    justify-content: center;
+    gap: clamp(16px, 3vh, 34px);
+  }
+
+  .result-headline { display: flex; flex-direction: column; gap: 6px; }
+  .result-caption { font-size: clamp(0.95rem, 1.2vw, 1.12rem); color: var(--ink-muted); }
+  .result-label {
+    margin: 0;
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 800;
+    font-size: clamp(3rem, 6.4vw, 5rem);
+    line-height: 0.96;
+    letter-spacing: -0.02em;
+    color: var(--state-ink);
+  }
+  .result-label.pop { animation: result-pop 550ms cubic-bezier(.34,1.56,.64,1); }
+  @keyframes result-pop {
+    0%   { transform: scale(.84); opacity: 0; }
+    60%  { transform: scale(1.04); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+  .result-block { display: flex; flex-direction: column; gap: var(--space-4); }
+  .block-title {
+    margin: 0;
+    font-size: clamp(0.76rem, 0.95vw, 0.86rem);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+  }
+
+  .dist-body { display: flex; align-items: center; gap: clamp(18px, 2.2vw, 44px); }
+
+  .donut-wrap {
+    position: relative;
+    width: clamp(158px, 23vh, 232px);
+    aspect-ratio: 1;
+    flex-shrink: 0;
+  }
+  .donut { width: 100%; height: 100%; display: block; }
+  .donut-track { fill: none; stroke: var(--surface-2); stroke-width: 5; }
+  .donut-seg {
+    fill: none;
+    stroke-width: 5;
+    stroke-linecap: butt;
+    transition: stroke-dasharray 750ms cubic-bezier(.25,1,.5,1), stroke-dashoffset 500ms ease-out, stroke 400ms;
+  }
+  .donut-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .donut-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: clamp(2.1rem, 3.8vw, 3rem);
+    line-height: 1;
+    color: var(--state-ink);
+  }
+  .donut-cap { font-size: clamp(0.78rem, 1vw, 0.9rem); color: var(--ink-faint); margin-top: 4px; }
+
+  .legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-rows: repeat(4, auto);
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    align-content: center;
+    gap: clamp(9px, 1.8vh, 18px) clamp(18px, 2.2vw, 40px);
+  }
+  /* each row leads with color + a big colored number, then the name -
+     numbers and colors are the priority for reading at a distance */
+  .legend-row {
+    display: grid;
+    grid-template-columns: auto minmax(2.3em, auto) 1fr;
+    align-items: center;
+    gap: clamp(8px, 0.9vw, 12px);
+  }
+  .legend-swatch {
+    width: 15px;
+    height: 15px;
+    border-radius: 5px;
+    flex-shrink: 0;
+    box-shadow: 0 1px 2px oklch(0.4 0.06 27 / 0.2);
+  }
+  .legend-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: clamp(1.15rem, 1.85vw, 1.5rem);
+    line-height: 1;
+    text-align: right;
+    color: var(--ink-muted);
+  }
+  .legend-name {
+    font-size: clamp(0.95rem, 1.25vw, 1.12rem);
+    color: var(--ink-muted);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .legend-row.is-winner .legend-swatch { width: 19px; height: 19px; border-radius: 6px; }
+  .legend-row.is-winner .legend-pct { font-size: clamp(1.35rem, 2.2vw, 1.85rem); }
+  .legend-row.is-winner .legend-name { color: var(--ink); font-weight: 700; }
+
+  .timeline { display: flex; gap: 6px; height: clamp(60px, 10vh, 96px); }
+  .timeline-chunk {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
+  }
+  .timeline-chunk-fill {
+    flex: 1;
+    border-radius: 11px;
+    background: var(--chunk-color, var(--surface-2));
+    transition: background-color 400ms;
+  }
+  .timeline-chunk time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: clamp(0.72rem, 1vw, 0.86rem);
+    color: var(--ink-faint);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ---------- persistent footer: record ---------- */
+
+  .panel-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex-shrink: 0;
+    padding-top: clamp(12px, 2vh, 22px);
+  }
+
+  .record-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    border: none;
+    cursor: pointer;
+    background: var(--brand);
+    color: var(--ink-on-brand);
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: clamp(1rem, 1.3vw, 1.15rem);
+    padding: clamp(14px, 1.9vh, 20px) clamp(26px, 2.6vw, 38px);
+    border-radius: 999px;
+    box-shadow:
+      0 6px 0 var(--brand-strong),
+      0 16px 26px -12px oklch(0.66 0.19 27 / 0.5);
+    transition: transform 140ms cubic-bezier(.34,1.56,.64,1), box-shadow 140ms ease-out, background-color 220ms ease-out;
+  }
+  .record-btn:hover:not(:disabled) { transform: translateY(-2px); }
+  .record-btn:active:not(:disabled) {
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 var(--brand-strong), 0 6px 12px -6px oklch(0.66 0.19 27 / 0.4);
+  }
+  .record-btn:disabled { cursor: default; }
+
+  .record-btn-dot { width: 14px; height: 14px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  .record-btn.is-busy {
+    background: var(--surface-2);
+    color: var(--ink);
+    box-shadow: 0 6px 0 oklch(0.82 0.012 27), 0 16px 26px -12px oklch(0.4 0.05 27 / 0.25);
+  }
+  .record-btn.is-busy .record-btn-dot { animation: dot-pulse 1s ease-in-out infinite; }
+  .record-btn.is-recording .record-btn-dot { border-radius: 3px; }
+
+  .record-btn::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 999px;
+    border: 3px solid var(--brand);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .record-btn.is-recording::after { animation: ring-pulse 1.4s infinite; }
+
+  @keyframes ring-pulse {
+    0%   { opacity: 0.5; transform: scale(0.97); }
+    70%  { opacity: 0; transform: scale(1.06); }
+    100% { opacity: 0; transform: scale(1.06); }
+  }
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+  }
+
+  .upload-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(46px, 5.4vh, 56px);
+    height: clamp(46px, 5.4vh, 56px);
+    flex-shrink: 0;
+    border: 1.5px solid var(--stroke);
+    background: var(--surface);
+    color: var(--ink-muted);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 140ms cubic-bezier(.34,1.56,.64,1), background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  }
+  .upload-btn svg { width: 22px; height: 22px; }
+  .upload-btn:hover:not(:disabled) { color: var(--brand); border-color: var(--brand); transform: translateY(-2px); }
+  .upload-btn:active:not(:disabled) { transform: translateY(0); }
+  .upload-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .foot-hint { font-size: 0.85rem; color: var(--ink-faint); }
+  .app[data-state="result"] .foot-hint { display: none; }
+
+  /* ---------- narrow / portrait fallback ---------- */
+
+  @media (max-width: 760px), (max-aspect-ratio: 5/6) {
+    .app {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+      overflow-y: auto;
+    }
+    .gobbie-frame { height: min(38vh, 340px); }
+    .scene-intro { max-width: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root { transition: none; }
+    .gobbie-video, .bg-blob { transition: none; }
+    .result-label.pop { animation: none; }
+    .gobbie-bubble.pop { animation: none; }
+    .donut-seg { transition: stroke 400ms; }
+    .listen-dots span { animation: none; opacity: 0.7; }
+    .record-btn.is-recording::after { animation: none; opacity: 0.35; }
+    .record-btn.is-busy .record-btn-dot { animation: none; }
+    .timeline-chunk-fill { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="bg-blob bg-blob--a" aria-hidden="true"></div>
+  <div class="bg-blob bg-blob--b" aria-hidden="true"></div>
+  <div class="bg-blob bg-blob--c" aria-hidden="true"></div>
+
+  <div class="app" id="app" data-state="idle">
+    <div class="gobbie-col">
+      <button class="brand" id="brandReset" type="button" title="Volver al inicio">
+        <span class="brand-mark">Gobbie</span>
+        <span class="brand-tag">detector de emociones · TP final</span>
+      </button>
+      <div class="gobbie-stage">
+        <div class="stage-glow" aria-hidden="true"></div>
+        <p class="gobbie-bubble" id="gobbieBubble" aria-live="polite">Dale, decí algo. Prometo no tomarte un parcial.</p>
+        <div class="gobbie-frame" role="img" aria-label="Gobbie, la mascota, animado">
+          <video id="gobbieVideoA" class="gobbie-video" muted playsinline preload="auto"></video>
+          <video id="gobbieVideoB" class="gobbie-video" muted playsinline preload="auto"></video>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-col">
+      <div class="panel-head">
+        <div class="mic-row">
+          🎙️ <select id="micSelect"><option>Cargando micrófonos…</option></select>
+        </div>
+      </div>
+
+      <div class="panel-scene">
+        <section class="scene scene-intro" aria-live="polite">
+          <div class="intro-lead">
+            <h1 class="intro-heading" id="introHeading">¿Cómo te sentís hoy?</h1>
+            <p class="intro-sub" id="introSub">Grabá unos segundos de tu voz y adivino tu emoción por cómo sonás.</p>
+          </div>
+          <div class="intro-emotions" aria-hidden="true">
+            <span class="intro-emotions-label">Reconozco 8 emociones en tu voz</span>
+            <div class="chip-row" id="chipRow"></div>
+          </div>
+          <div class="listen-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+        </section>
+
+        <section class="scene scene-result" aria-live="polite">
+          <div class="result-headline">
+            <span class="result-caption">Gobbie detecta que estás</span>
+            <h2 class="result-label" id="resultLabel">Neutral</h2>
+          </div>
+
+          <div class="result-block">
+            <h3 class="block-title">Probabilidad por emoción</h3>
+            <div class="dist-body">
+              <div class="donut-wrap">
+                <svg class="donut" viewBox="0 0 42 42" role="img" id="donut" aria-label="Distribución de emociones">
+                  <g transform="rotate(-90 21 21)">
+                    <circle class="donut-track" cx="21" cy="21" r="15.9155"></circle>
+                    <g id="donutSegs"></g>
+                  </g>
+                </svg>
+                <div class="donut-center">
+                  <span class="donut-pct" id="donutPct">—</span>
+                  <span class="donut-cap">confianza</span>
+                </div>
+              </div>
+              <ul class="legend" id="legend"></ul>
+            </div>
+          </div>
+
+          <div class="result-block">
+            <h3 class="block-title">Cómo cambió a lo largo del audio</h3>
+            <div class="timeline" id="timeline"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="panel-foot">
+        <button class="record-btn" id="recordBtn">
+          <span class="record-btn-dot"></span>
+          <span class="record-btn-label" id="recordBtnLabel">Grabar</span>
+        </button>
+        <button class="upload-btn" id="uploadBtn" type="button" title="Subir un archivo de audio" aria-label="Subir un archivo de audio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 15V4"/>
+            <path d="M7.5 8.5 12 4l4.5 4.5"/>
+            <path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>
+          </svg>
+        </button>
+        <span class="foot-hint" id="footHint">Apretá para empezar</span>
+        <input type="file" id="fileInput" accept="audio/*" hidden>
+      </div>
+    </div>
+  </div>
+
+<script>
+const VIDEO_BASE = "/assets/videos/";
+const clipUrl = (id) => `${VIDEO_BASE}${id}.mp4`;
+
+const IDLE_MAIN = ["J01", "J02", "J03"];
+const IDLE_EXTRA = ["J29", "J30", "J31"];
+const THINKING = "J05";
+
+const EMOTIONS = {
+  neutral:   { label: "Neutral",     color: "var(--e-neutral)",   ink: "var(--e-neutral-ink)"   },
+  calm:      { label: "Tranquilo",   color: "var(--e-calm)",      ink: "var(--e-calm-ink)",      loop: "J04" },
+  happy:     { label: "Feliz",       color: "var(--e-happy)",     ink: "var(--e-happy-ink)",     enter: "J06", loop: "J07", exit: "J08" },
+  sad:       { label: "Triste",      color: "var(--e-sad)",       ink: "var(--e-sad-ink)",       enter: "J09", loop: "J10", exit: "J11" },
+  angry:     { label: "Enojado",     color: "var(--e-angry)",     ink: "var(--e-angry-ink)",     enter: "J12", loop: "J13", exit: "J14" },
+  fearful:   { label: "Asustado",    color: "var(--e-fearful)",   ink: "var(--e-fearful-ink)",   enter: "J15", loop: "J16", exit: "J17" },
+  disgust:   { label: "Asco",        color: "var(--e-disgust)",   ink: "var(--e-disgust-ink)",   enter: "J18", loop: "J19", exit: "J20" },
+  surprised: { label: "Sorprendido", color: "var(--e-surprised)", ink: "var(--e-surprised-ink)", enter: "J21", loop: "J22", exit: "J23" },
+};
+const EMOTION_ORDER = ["neutral", "calm", "happy", "sad", "angry", "fearful", "disgust", "surprised"];
+
+// warm the browser's HTTP cache for every clip we might play, so later
+// src swaps resolve near-instantly instead of paying disk+decode latency
+// mid-crossfade (this is a local kiosk demo, loopback bandwidth is free)
+const ALL_CLIP_IDS = new Set([
+  ...IDLE_MAIN, ...IDLE_EXTRA, THINKING,
+  ...Object.values(EMOTIONS).flatMap((e) => [e.enter, e.loop, e.exit].filter(Boolean)),
+]);
+ALL_CLIP_IDS.forEach((id) => { fetch(clipUrl(id)).catch(() => {}); });
+
+const root = document.documentElement;
+const app = document.getElementById("app");
+const videoA = document.getElementById("gobbieVideoA");
+const videoB = document.getElementById("gobbieVideoB");
+const recordBtn = document.getElementById("recordBtn");
+const recordBtnLabel = document.getElementById("recordBtnLabel");
+const uploadBtn = document.getElementById("uploadBtn");
+const fileInput = document.getElementById("fileInput");
+const micSelect = document.getElementById("micSelect");
+const introHeading = document.getElementById("introHeading");
+const introSub = document.getElementById("introSub");
+const resultLabel = document.getElementById("resultLabel");
+const donut = document.getElementById("donut");
+const donutSegs = document.getElementById("donutSegs");
+const donutPct = document.getElementById("donutPct");
+const legendEl = document.getElementById("legend");
+const timelineEl = document.getElementById("timeline");
+const gobbieBubble = document.getElementById("gobbieBubble");
+
+// Gobbie's voice: a witty, cheeky know-it-all with an engineering/ML streak
+// (jokes about the second midterm that wrecks everyone, ML concepts, planes,
+// Stanford as a benchmark) - referenced as jokes, never claimed as his own bio.
+// 5 lines per emotion picked at random + a few per non-result state.
+const BUBBLES = {
+  idle: [
+    "Dale, decí algo. Prometo no tomarte un parcial.",
+    "Hablame, que analizo voces mejor que un profe corrige.",
+    "Grabá tranqui, no soy tan cruel como un segundo parcial.",
+    "Soy 100% IA, cero sueldo de Airbus. Contame algo.",
+    "Vamos, una palabrita. No muerdo… casi nunca.",
+  ],
+  listening: [
+    "Te escucho más atento que en un final.",
+    "Shh, grabando. Silencio de época de parciales.",
+    "Dale, que estoy anotando todo.",
+  ],
+  processing: [
+    "Calculando… más difícil que el segundo parcial.",
+    "Corriendo el modelo, ojalá no haya overfitting.",
+    "Pensando… no soy una compu de Airbus, bancá.",
+  ],
+  error: [
+    "Se me colgó peor que yo en el segundo parcial.",
+    "Error 500. Ni la IA aprueba siempre, ¿viste?",
+  ],
+  neutral: [
+    "Neutral total. Más plano que un parcial sin sorpresas.",
+    "Ni fu ni fa. Un 6 raspando, zafás.",
+    "Voz tan estable que la usaría de baseline.",
+    "Cero drama. Bien regularizado, como un buen modelo.",
+    "Tranqui total. Cara de profe un lunes.",
+  ],
+  calm: [
+    "Qué paz. Ni un ingeniero de vacaciones.",
+    "Relajado total. Se nota que no rendís mañana.",
+    "Esa calma no existía antes del segundo parcial.",
+    "Tranqui como avión en piloto automático.",
+    "Serenísimo. Aprobaste la vida, se ve.",
+  ],
+  happy: [
+    "¡Feliz! ¿Aprobaste Machine Learning o qué?",
+    "¡Esa alegría es de zafar del segundo parcial!",
+    "¡Contentísimo! Ni un despegue de Airbus.",
+    "¡Felicidad nivel carta de aceptación de Stanford!",
+    "¡Te sacaste un 10, admitilo!",
+  ],
+  sad: [
+    "Tristón… ¿te tomaron el segundo parcial?",
+    "Ese bajón es de mirar la nota y no creerla.",
+    "Un abrazo. Los finales pegan, lo sé.",
+    "Triste como gradient descent que no converge.",
+    "Ánimo. Ni Stanford te salva de un mal día.",
+  ],
+  angry: [
+    "Uh. ¿Te bocharon en el segundo parcial?",
+    "Esa bronca es de ver la corrección, seguro.",
+    "Respirá. La ira no te baja la loss, eh.",
+    "Tranquilo, Hulk. Es solo un parcial… ¿o no?",
+    "Enojadísimo. Ni yo con un dataset lleno de nulls.",
+  ],
+  fearful: [
+    "Ese miedo es de abrir la nota del segundo parcial.",
+    "Tranqui, asusta más un final que yo.",
+    "¿Querés que llame al 911?",
+    "¿Viste una pala acaso?",
+    "¿Lo pusieron a Nico González? No me la contes.",
+  ],
+  disgust: [
+    "Puaj. ¿Viste tu nota del segundo parcial?",
+    "Esa cara es de leer código ajeno sin comentar.",
+    "Asco nivel dataset lleno de nulls.",
+    "Guácala. ¿Alguien dijo derivadas parciales?",
+    "Repugnancia pura, como el spaghetti code.",
+  ],
+  surprised: [
+    "¡Wow! ¿Aprobaste sin estudiar?",
+    "¡Sorpresa! Como el modelo que da 99% de una.",
+    "¡No lo esperabas! Igualito al segundo parcial.",
+    "¡Uh! Cara de ver un Airbus despegar de cerca.",
+    "¡Increíble! Más que un paper entrando a Stanford.",
+  ],
+};
+
+function setBubble(key) {
+  const pool = BUBBLES[key];
+  if (!pool || !pool.length) return;
+  gobbieBubble.textContent = pool[Math.floor(Math.random() * pool.length)];
+  gobbieBubble.classList.remove("pop");
+  void gobbieBubble.offsetWidth;
+  gobbieBubble.classList.add("pop");
+}
+const footHint = document.getElementById("footHint");
+
+const INTRO_COPY = {
+  idle: {
+    heading: "¿Cómo te sentís hoy?",
+    sub: "Grabá unos segundos de tu voz y adivino tu emoción por cómo sonás.",
+  },
+  listening: {
+    heading: "Te escucho…",
+    sub: "Hablá con naturalidad. Cuando termines, apretá Detener.",
+  },
+  processing: {
+    heading: "Pensando…",
+    sub: "Gobbie está analizando tu voz.",
+  },
+};
+
+function setScene(state, copy) {
+  app.dataset.state = state;
+  const text = copy ?? INTRO_COPY[state];
+  if (text) {
+    introHeading.textContent = text.heading;
+    introSub.textContent = text.sub;
+  }
+}
+
+// --- Gobbie video controller ------------------------------------------
+// Two stacked <video> layers ping-pong: the next clip loads and starts
+// playing on the standby layer *underneath*, and only once it actually has
+// a frame ready do we crossfade opacity - the visible layer never goes
+// blank, it just keeps holding its last frame if it has to wait.
+[videoA, videoB].forEach((v) => { v.muted = true; });
+let activeVideo = videoA;
+let standbyVideo = videoB;
+let stateToken = 0;
+let currentEmotionKey = null;
+
+function whenEnded(el) {
+  return new Promise((resolve) => el.addEventListener("ended", resolve, { once: true }));
+}
+function whenReady(el) {
+  return new Promise((resolve) => {
+    if (el.readyState >= 2) resolve();
+    else el.addEventListener("loadeddata", resolve, { once: true });
+  });
+}
+
+async function crossTo(id, { loop = false } = {}) {
+  standbyVideo.loop = loop;
+  standbyVideo.src = clipUrl(id);
+  standbyVideo.currentTime = 0;
+  standbyVideo.play().catch(() => {});
+  await whenReady(standbyVideo);
+  standbyVideo.classList.add("is-active");
+  activeVideo.classList.remove("is-active");
+  activeVideo.pause();
+  const prevActive = activeVideo;
+  activeVideo = standbyVideo;
+  standbyVideo = prevActive;
+  return activeVideo;
+}
+
+async function playSequence(ids, { finalLoop = false, token }) {
+  for (let i = 0; i < ids.length; i++) {
+    if (token !== stateToken) return;
+    const isLast = i === ids.length - 1;
+    const loopThis = isLast && finalLoop;
+    const el = await crossTo(ids[i], { loop: loopThis });
+    if (token !== stateToken) return;
+    if (!loopThis) await whenEnded(el);
+    if (token !== stateToken) return;
+  }
+}
+
+async function startIdleLoop() {
+  stateToken += 1;
+  const token = stateToken;
+  currentEmotionKey = null;
+  let lastId = null;
+  while (token === stateToken) {
+    const pool = Math.random() < 0.22 ? IDLE_EXTRA : IDLE_MAIN;
+    const choices = pool.filter((id) => id !== lastId);
+    const id = choices[Math.floor(Math.random() * choices.length)];
+    lastId = id;
+    const el = await crossTo(id, { loop: false });
+    if (token !== stateToken) return;
+    await whenEnded(el);
+  }
+}
+
+function playEmotion(key) {
+  stateToken += 1;
+  const token = stateToken;
+  const e = EMOTIONS[key];
+  if (!e || key === "neutral") {
+    startIdleLoop();
+    return;
+  }
+  currentEmotionKey = key;
+  const ids = e.enter ? [e.enter, e.loop] : [e.loop];
+  playSequence(ids, { finalLoop: true, token });
+}
+
+async function beginListening() {
+  stateToken += 1;
+  const token = stateToken;
+  const exitId = currentEmotionKey && EMOTIONS[currentEmotionKey] && EMOTIONS[currentEmotionKey].exit;
+  if (exitId) {
+    const el = await crossTo(exitId, { loop: false });
+    if (token !== stateToken) return;
+    await whenEnded(el);
+    if (token !== stateToken) return;
+  }
+  currentEmotionKey = null;
+  crossTo(THINKING, { loop: true });
+}
+
+startIdleLoop();
+setBubble("idle");
+
+function setStateColor(chipRef, inkRef) {
+  root.style.setProperty("--state-color", chipRef);
+  root.style.setProperty("--state-ink", inkRef ?? chipRef);
+}
+
+// pre-build the 8 donut segments + legend rows once; each result updates the
+// segment arcs (via stroke-dasharray) and reorders the legend by rank
+const SVG_NS = "http://www.w3.org/2000/svg";
+const donutSeg = {};
+const legendRow = {};
+EMOTION_ORDER.forEach((key) => {
+  const e = EMOTIONS[key];
+
+  const seg = document.createElementNS(SVG_NS, "circle");
+  seg.setAttribute("class", "donut-seg");
+  seg.setAttribute("cx", "21");
+  seg.setAttribute("cy", "21");
+  seg.setAttribute("r", "15.9155");
+  seg.style.stroke = e.color;
+  seg.style.strokeDasharray = "0 100";
+  donutSeg[key] = seg;
+  donutSegs.appendChild(seg);
+
+  const li = document.createElement("li");
+  li.className = "legend-row";
+  li.dataset.emotion = key;
+  li.innerHTML = `<span class="legend-swatch" style="background:${e.color}"></span><span class="legend-pct" style="color:${e.ink}">—</span><span class="legend-name">${e.label}</span>`;
+  legendRow[key] = li;
+  legendEl.appendChild(li);
+});
+
+// idle landing: the 8 emotions Gobbie can detect, shown as colorful chips
+const chipRow = document.getElementById("chipRow");
+EMOTION_ORDER.forEach((key) => {
+  const e = EMOTIONS[key];
+  const chip = document.createElement("span");
+  chip.className = "emotion-chip";
+  chip.innerHTML = `<span class="chip-dot" style="background:${e.color}"></span>${e.label}`;
+  chipRow.appendChild(chip);
+});
+
+let mediaRecorder, chunks = [], recording = false, busy = false, canceled = false;
+let requestToken = 0;
+
+// return to the landing state, clearing any recognized emotion (logo click)
+function resetToIdle() {
+  requestToken += 1; // invalidate any in-flight prediction so it can't render
+  if (recording && mediaRecorder && mediaRecorder.state === "recording") {
+    canceled = true;
+    try { mediaRecorder.stop(); } catch (e) {}
+  }
+  startIdleLoop();
+  setStateColor("var(--e-neutral)", "var(--e-neutral-ink)");
+  setScene("idle");
+  setBubble("idle");
+  setIdle("Grabar", "Apretá para empezar");
+}
+document.getElementById("brandReset").onclick = resetToIdle;
+
+async function refreshMicList() {
+  let mics = (await navigator.mediaDevices.enumerateDevices())
+    .filter((d) => d.kind === "audioinput");
+
+  // los nombres reales solo se ven si ya diste permiso al menos una vez; si están
+  // vacíos, pedimos permiso ahora (y cerramos el stream) solo para desbloquearlos
+  if (mics.length && mics.every((d) => !d.label)) {
+    try {
+      const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tmp.getTracks().forEach((t) => t.stop());
+      mics = (await navigator.mediaDevices.enumerateDevices())
+        .filter((d) => d.kind === "audioinput");
+    } catch (err) {
+      introSub.textContent = "No se pudo acceder al micrófono: " + err.message;
+      return;
+    }
+  }
+
+  const prevSelected = micSelect.value;
+  micSelect.innerHTML = "";
+  mics.forEach((d, i) => {
+    const opt = document.createElement("option");
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Micrófono ${i + 1}`;
+    micSelect.appendChild(opt);
+  });
+  if (mics.some((d) => d.deviceId === prevSelected)) micSelect.value = prevSelected;
+}
+
+navigator.mediaDevices.addEventListener("devicechange", refreshMicList);
+refreshMicList();
+
+function setBusy(recordingNow) {
+  recording = recordingNow;
+  busy = true;
+  recordBtn.disabled = recordingNow ? false : true;
+  uploadBtn.disabled = true;
+  recordBtn.classList.toggle("is-recording", recordingNow);
+  recordBtn.classList.toggle("is-busy", true);
+  recordBtnLabel.textContent = recordingNow ? "Detener" : "Escuchando…";
+  footHint.textContent = recordingNow ? "Hablá y apretá cuando termines" : "";
+}
+
+function setIdle(label, hint) {
+  recording = false;
+  busy = false;
+  recordBtn.disabled = false;
+  uploadBtn.disabled = false;
+  recordBtn.classList.remove("is-recording", "is-busy");
+  recordBtnLabel.textContent = label;
+  footHint.textContent = hint ?? "";
+}
+
+// shared "Gobbie is thinking about this audio" state, entered both when a
+// recording stops and when a file is uploaded
+function enterProcessing() {
+  recording = false;
+  busy = true;
+  recordBtn.disabled = true;
+  uploadBtn.disabled = true;
+  recordBtn.classList.remove("is-recording");
+  recordBtn.classList.add("is-busy");
+  recordBtnLabel.textContent = "Pensando…";
+  footHint.textContent = "";
+  setScene("processing");
+  setBubble("processing");
+}
+
+recordBtn.onclick = async () => {
+  if (busy && !recording) return; // processing, ignore clicks
+  if (!recording) {
+    try {
+      const constraints = {
+        audio: micSelect.value ? { deviceId: { exact: micSelect.value } } : true,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      chunks = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (canceled) { canceled = false; return; } // logo reset mid-recording
+        sendAudio(new Blob(chunks, { type: mediaRecorder.mimeType }));
+      };
+      mediaRecorder.start();
+      setScene("listening");
+      setBubble("listening");
+      beginListening();
+      setStateColor("var(--e-neutral)", "var(--e-neutral-ink)");
+      setBusy(true);
+    } catch (err) {
+      introSub.textContent = "No se pudo acceder al micrófono: " + err.message;
+    }
+  } else {
+    mediaRecorder.stop();
+    enterProcessing();
+  }
+};
+
+// upload path: run any audio file through the same /predict pipeline
+uploadBtn.onclick = () => { if (!busy) fileInput.click(); };
+fileInput.onchange = () => {
+  const file = fileInput.files && fileInput.files[0];
+  fileInput.value = ""; // let the same file be re-picked later
+  if (file) handleUpload(file);
+};
+
+async function handleUpload(file) {
+  if (busy) return;
+  beginListening();  // send Gobbie to his thinking pose (plays exit first if needed)
+  setStateColor("var(--e-neutral)", "var(--e-neutral-ink)");
+  enterProcessing();
+  sendAudio(file, file.name);
+}
+
+async function sendAudio(blob, filename = "clip.webm") {
+  const myToken = ++requestToken;
+  const form = new FormData();
+  form.append("audio", blob, filename);
+  try {
+    const res = await fetch("/predict", { method: "POST", body: form });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (myToken !== requestToken) return; // superseded by a logo reset
+    render(data);
+  } catch (err) {
+    if (myToken !== requestToken) return;
+    setScene("idle", { heading: "Ups, algo falló", sub: "Error al predecir: " + err.message + " Probá grabar de nuevo." });
+    setBubble("error");
+    startIdleLoop();
+    setStateColor("var(--e-neutral)", "var(--e-neutral-ink)");
+    setIdle("Grabar", "Apretá para reintentar");
+  }
+}
+
+function render(data) {
+  const { chunks: chunkResults, final } = data;
+  const e = EMOTIONS[final.label] ?? EMOTIONS.neutral;
+
+  setScene("result");
+  setBubble(final.label);
+  playEmotion(final.label);
+  setStateColor(e.color, e.ink);
+  setIdle("Grabar de nuevo");
+
+  resultLabel.textContent = e.label;
+  resultLabel.classList.remove("pop");
+  void resultLabel.offsetWidth;
+  resultLabel.classList.add("pop");
+
+  const ranked = Object.entries(final.probs).sort((a, b) => b[1] - a[1]);
+  donutPct.textContent = `${(ranked[0][1] * 100).toFixed(0)}%`;
+  donut.setAttribute("aria-label", `${e.label}, ${(ranked[0][1] * 100).toFixed(0)}% de confianza`);
+
+  // segments tile the ring clockwise from the top, biggest first; each arc's
+  // length is its probability and its offset is where the previous ones ended
+  let cum = 0;
+  ranked.forEach(([label, p], rank) => {
+    const pct = p * 100;
+    const seg = donutSeg[label];
+    seg.style.transitionDelay = `${rank * 55}ms`;
+    seg.style.strokeDasharray = `${pct.toFixed(2)} ${(100 - pct).toFixed(2)}`;
+    seg.style.strokeDashoffset = `${(-cum).toFixed(2)}`;
+    cum += pct;
+
+    const li = legendRow[label];
+    li.style.order = rank;
+    li.classList.toggle("is-winner", rank === 0);
+    li.querySelector(".legend-pct").textContent = `${pct.toFixed(0)}%`;
+  });
+
+  timelineEl.innerHTML = "";
+  chunkResults.forEach((c) => {
+    const ce = EMOTIONS[c.label] ?? EMOTIONS.neutral;
+    const el = document.createElement("div");
+    el.className = "timeline-chunk";
+    el.title = `${c.start}s–${c.end}s: ${ce.label}`;
+    el.innerHTML = `<div class="timeline-chunk-fill" style="--chunk-color:${ce.color}"></div><time>${c.start}s–${c.end}s</time>`;
+    timelineEl.appendChild(el);
+  });
+}
+</script>
+</body>
+</html>
