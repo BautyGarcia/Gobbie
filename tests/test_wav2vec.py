@@ -10,7 +10,7 @@ def _sample(n=2):
 def test_extract_wav2vec_shape_and_index():
     md = _sample(2)
     feats = extract_wav2vec(md, device="cpu")
-    assert feats.shape == (2, 768)                      # wav2vec2-base hidden size = 768
+    assert feats.shape == (2, 768)
     assert list(feats.index) == md["path"].tolist()
     assert feats.isna().sum().sum() == 0
 

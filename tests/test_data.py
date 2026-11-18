@@ -25,7 +25,7 @@ def test_parse_filename_song_female():
 
 def test_build_metadata_counts():
     md = build_metadata()
-    assert len(md) == 2452  # 1440 speech + 1012 song
+    assert len(md) == 2452
     assert (md["vocal_channel"] == "speech").sum() == 1440
     assert (md["vocal_channel"] == "song").sum() == 1012
     assert set(md["emotion"].unique()) <= set(config.EMOTION_MAP.values())

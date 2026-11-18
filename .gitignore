@@ -15,3 +15,23 @@ __pycache__/
 venv/
 docs/
 data/
+# macOS
+.DS_Store
+
+# LaTeX build artifacts
+informe/*.aux
+informe/*.fdb_latexmk
+informe/*.fls
+informe/*.log
+informe/*.out
+informe/*.synctex.gz
+
+# Material de la materia / entrega / borradores (no van al repo público)
+enunciado_*.pdf
+Garcia_Gonzalez_Informe_PF/
+Garcia_Gonzalez_Informe_PF.zip
+poster_draft.*
+poster/poster_draft.png
+formula_zoom.png
+DESIGN.md
+PRODUCT.md

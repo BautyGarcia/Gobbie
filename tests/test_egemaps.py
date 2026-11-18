@@ -9,8 +9,8 @@ def _sample_metadata(n=3):
 def test_extract_egemaps_shape_and_index():
     md = _sample_metadata(3)
     feats = extract_egemaps(md)
-    assert feats.shape == (3, 88)                       # eGeMAPSv02 Functionals = 88
-    assert list(feats.index) == md["path"].tolist()     # alineado con la entrada
+    assert feats.shape == (3, 88)
+    assert list(feats.index) == md["path"].tolist()
     assert feats.isna().sum().sum() == 0
 
 

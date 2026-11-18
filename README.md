@@ -1,155 +1,150 @@
-# Reconocimiento de emociones en el habla (RAVDESS)
+<p align="center">
+  <img src="demo/assets/gobbie/gobbie-happy.png" alt="Gobbie, the demo mascot" width="160">
+</p>
 
-Trabajo práctico final de Machine Learning. El objetivo es **clasificar la emoción**
-a partir de una grabación de voz. El dataset de desarrollo es
-[RAVDESS](https://zenodo.org/record/1188976) (24 actores, canal *speech*), con 8 clases de
-emoción: `neutral`, `calm`, `happy`, `sad`, `angry`, `fearful`, `disgust`, `surprised`.
+<h1 align="center">Gobbie: Speech Emotion Recognition</h1>
 
-El modelo final es un **ensemble** de clasificadores lineales y una red MLP sobre
-*embeddings* de tres backbones de audio (WavLM-large, HuBERT-large, wav2vec2-base),
-con normalización **CMVN por hablante**.
+<p align="center">
+  Detects the emotion in a voice recording from self-supervised speech embeddings.<br>
+  <b>0.890 accuracy</b> on RAVDESS with strict speaker-independent cross-validation, and
+  <b>0.767</b> on a German corpus it never saw.
+</p>
 
----
-
-## Estructura de la entrega
-
-```
-.
-├── README.md            # este archivo
-├── requirements.txt      # dependencias de Python
-├── notebooks/
-│   └── main.ipynb        # notebook principal (todo el trabajo, de punta a punta)
-├── splits/
-│   └── split.json        # partición train/val por actor (fija, seed=42)
-└── src/                  # código fuente reutilizable que usa el notebook
-    ├── config.py         # rutas, seed, mapeos de RAVDESS, columnas de metadata
-    ├── data.py           # parseo de nombres RAVDESS, armado de metadata, get_xy
-    ├── splits.py         # armado y carga de la partición train/val por actor
-    ├── normalize.py      # CMVN por hablante (features pooled y frame-level)
-    ├── metrics.py        # métricas de evaluación (accuracy, F1, etc.)
-    ├── evaluation.py     # cross-validation agrupada por actor (GroupKFold)
-    ├── domain_shift.py   # metadata de EmoDB para el test out-of-domain
-    ├── plots.py          # matriz de confusión y gráficos de EDA
-    ├── predict.py        # inferencia sobre audios nuevos (clase + CLI)
-    ├── features/
-    │   ├── egemaps.py    # extracción de features eGeMAPS (openSMILE)
-    │   ├── wav2vec.py    # embeddings wav2vec2/WavLM/HuBERT (pooled, por capa y frame-level)
-    │   └── augment.py    # data augmentation (speed/ruido) → pseudo-hablantes
-    └── models/
-        ├── mlp.py        # MLPClassifier (PyTorch, API sklearn) sobre features pooled
-        ├── crnn.py       # CRNNClassifier sobre secuencias frame-level
-        └── finetune.py   # FineTuneClassifier: fine-tuning end-to-end de wav2vec2
-```
-
-### `notebooks/main.ipynb`
-
-Es el hilo conductor del trabajo. Lee funciones de `src/`, genera todos los
-resultados y gráficos, y entrena el modelo final. Está organizado en secciones:
-
-1. **Datos y split** — armado de metadata y partición train/val.
-2. **Features** — eGeMAPS y wav2vec.
-3. **EDA** — balance de clases, distribuciones, PCA 2D, análisis de confounds (género).
-4. **Modelos comparación** — baseline lineal vs. otros clasificadores.
-5. **Investigación de capas de wav2vec** — qué capa del transformer rinde mejor.
-6. **Feature engineering** — importancia de features, selección top-k, decorrelación/PCA.
-7. **Modelo "final" (v1)** — CMVN + multi-capa.
-8. **Redes neuronales** — MLP sobre features pooled y CRNN sobre secuencias.
-9. **Optimización avanzada** — WavLM-large, combinación de representaciones,
-   augmentation con pseudo-hablantes, ensemble multi-modelo y fine-tuning end-to-end.
-10. **Modelo final** — el ganador, entrenamiento sobre todos los datos, demo de
-    predicción sobre un audio y **evaluación en otro dataset (EmoDB)** como prueba
-    de generalización a otro dominio.
-
-### `splits/split.json`
-
-Partición **por actor** (no por grabación) para evitar fuga de identidad entre
-train y val, estratificada por género y fija con `seed=42`:
-
-- `train_actors`: 20 actores
-- `val_actors`: 4 actores (2, 9, 11, 20)
-
-La estimación de performance durante el desarrollo se hace además con
-**cross-validation agrupada por actor** (`GroupKFold`, ver `src/evaluation.py`),
-que es la métrica principal. **EmoDB** se usa como test independiente (otro idioma
-y dominio). El set de evaluación oficial que se provea cumple el rol de test final.
-
-### `src/`
-
-Módulos importables (todos se usan desde `notebooks/main.ipynb`). Ninguna función
-lleva prefijo `_` en su API pública. Los puntos de entrada más relevantes:
-
-| Módulo | Qué expone |
-|--------|-----------|
-| `data.py` | `build_metadata()`, `get_xy(df, vocal_channel, split)`, `parse_filename()` |
-| `splits.py` | `make_split()`, `load_split()`, `assign_split()` |
-| `features/wav2vec.py` | `load_audio()`, `extract_wav2vec*()` (pooled / por capa / frames) |
-| `features/egemaps.py` | `extract_egemaps()` |
-| `features/augment.py` | `extract_augmented()`, `speed_perturb()`, `add_noise()` |
-| `normalize.py` | `cmvn_by_speaker()`, `cmvn_frames_by_speaker()` |
-| `evaluation.py` | `grouped_cv()`, `grouped_cv_proba()` |
-| `models/{mlp,crnn,finetune}.py` | clasificadores con API estilo sklearn (`fit`/`predict`) |
-| `predict.py` | `EmotionPredictor`, `predict()` y CLI de inferencia |
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white">
+  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white">
+  <img alt="Hugging Face" src="https://img.shields.io/badge/Transformers-FFD21E?logo=huggingface&logoColor=black">
+  <img alt="scikit-learn" src="https://img.shields.io/badge/scikit--learn-F7931E?logo=scikitlearn&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white">
+  <img alt="Cloud Run" src="https://img.shields.io/badge/Cloud%20Run-4285F4?logo=googlecloud&logoColor=white">
+</p>
 
 ---
 
-## Instalación
+Final project for the Machine Learning course at Universidad de San Andrés. Given a speech
+clip, the system predicts one of 8 emotions: `neutral`, `calm`, `happy`, `sad`, `angry`,
+`fearful`, `disgust`, `surprised`. It ships with **Gobbie**, an animated mascot web app that
+listens to you through the microphone and reacts to your emotion in real time. We built it for
+the poster session at AI Fest 2026.
 
-Requiere **Python 3.11**.
+> The written report, poster and notebook are in Spanish. The code and this README are in English.
+
+## Results
+
+All numbers are out-of-fold predictions from **5-fold GroupKFold by actor**, so no speaker
+appears in both training and evaluation.
+
+| Step | Accuracy | Macro-F1 |
+|---|---|---|
+| Baseline: Random Forest on eGeMAPS (expert acoustic features) | 0.465 | 0.449 |
+| Logistic regression on wav2vec2-base, layer 8 | 0.732 | 0.727 |
+| + per-speaker normalization (CMVN) | 0.803 | 0.797 |
+| + top-3 layers + eGeMAPS | 0.827 | 0.821 |
+| WavLM-large, top-3 layers + CMVN | 0.864 | 0.863 |
+| Ensemble of 3 backbones (WavLM, HuBERT, wav2vec2) | 0.882 | 0.880 |
+| **Final weighted ensemble** (+ MLP with pseudo-speaker augmentation) | **0.890** | **0.888** |
+| *For comparison:* end-to-end fine-tuning of WavLM-large | 0.788 | 0.782 |
+| Zero-shot on **EmoDB** (German, 6 shared classes, no retraining) | 0.767 | 0.787 |
+
+### What we learned
+
+- **Speaker identity is the main confound.** Variation between speakers is as large as
+  variation between emotions. Per-speaker CMVN was the single biggest gain (+7 points) and
+  also explains most of the recovery on the German corpus.
+- **Middle layers beat the last layer.** Emotion peaks in the intermediate transformer layers
+  of wav2vec2, WavLM and HuBERT. The final layers specialize in the pre-training objective.
+- **More capacity didn't help with ~1,400 clips.** A linear model on frozen embeddings beat an
+  MLP, a CRNN over frame-level features, and full end-to-end fine-tuning of WavLM-large. The
+  fine-tuning was also about 100× more expensive.
+- **Diversity beats individual strength in the ensemble.** The final model mixes logistic
+  regressions on three backbones with an MLP trained on augmented "pseudo-speakers" (speed
+  perturbation and noise).
+
+## How it works
+
+```
+audio (any .wav) ─► mono 16 kHz ─► WavLM-large / HuBERT-large / wav2vec2-base
+                                    └─ mean-pool the best 3 transformer layers
+                                         └─ CMVN per speaker
+                                              └─ weighted soft-voting ensemble
+                                                   (3× LogReg + MLP)  ─► emotion
+```
+
+## Quickstart
+
+Requires **Python 3.11**.
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate          # en Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-La primera vez que se corre inferencia se descargan los backbones de HuggingFace
-(WavLM-large, HuBERT-large, wav2vec2-base), varios cientos de MB. Con GPU
-(CUDA / Apple MPS) es notablemente más rápido; funciona igual en CPU.
+The trained model (`data/processed/final_model.pkl`) isn't versioned. To generate it, run
+the *"Entrenamiento sobre todos los datos"* section of `notebooks/main.ipynb`. That requires
+[RAVDESS](https://zenodo.org/record/1188976) under `data/`. The first run downloads the three
+backbones from Hugging Face (a few hundred MB). A GPU (CUDA or Apple MPS) helps, but
+everything runs on CPU.
 
----
-
-## Cómo estimar la emoción de un audio
-
-La inferencia vive en `src/predict.py`. El audio se remuestrea a 16 kHz
-automáticamente (`load_audio`), así que puede ser cualquier `.wav`.
-
-### Desde la terminal
+### Predict from the command line
 
 ```bash
-python -m src.predict ruta/al/audio.wav [otro_audio.wav ...]
+python -m src.predict path/to/audio.wav [more.wav ...]
+# happy       path/to/audio.wav
 ```
 
-Imprime la emoción predicha por cada archivo:
-
-```
-happy       ruta/al/audio.wav
-```
-
-### Desde Python
+### Predict from Python
 
 ```python
 from src.predict import EmotionPredictor
 
-predictor = EmotionPredictor()                 # carga el modelo final
-emociones = predictor.predict(["audio.wav"])   # -> ['happy']
+predictor = EmotionPredictor()
+predictor.predict(["audio.wav"])                  # -> ['happy']
+proba, classes = predictor.predict_proba(["audio.wav"])
 
-# Si además querés las probabilidades por clase:
-proba, clases = predictor.predict_proba(["audio.wav"])
+# Pass speaker IDs to enable CMVN (noticeably more accurate):
+predictor.predict(["a1.wav", "a2.wav"], speakers=["spk1", "spk1"])
 ```
 
-### Sobre el modelo entrenado y CMVN
+### Run the Gobbie demo
 
-- `EmotionPredictor` carga por defecto `data/processed/final_model.pkl`. Ese archivo
-  **no se versiona** (es pesado y `data/` está en `.gitignore`): se genera corriendo
-  la sección *"Entrenamiento sobre todos los datos"* de `notebooks/main.ipynb`, o se
-  entrega aparte. Se puede indicar otra ruta con `EmotionPredictor(model_path=...)`.
-- El modelo rinde mejor con **CMVN por hablante**, que resta la voz base de cada
-  persona. Para aprovecharlo hay que pasar los IDs de hablante:
-
-  ```python
-  predictor.predict(["a1.wav", "a2.wav"], speakers=["spk1", "spk1"])
-  ```
-
-  Sin `speakers` (caso de un audio suelto y desconocido) se usan los embeddings sin
-  normalizar, que funcionan pero con menor accuracy.
+```bash
+python demo/app.py      # http://127.0.0.1:8000
 ```
+
+The FastAPI backend splits the recording into overlapping 3-second windows and returns the
+emotion for each one, so Gobbie can react while you talk. See
+[`demo/deploy/`](demo/deploy) for the Docker and Google Cloud Run setup.
+
+## Repository layout
+
+```
+├── notebooks/main.ipynb   end-to-end work: EDA, features, models, final model, EmoDB test
+├── src/
+│   ├── data.py, splits.py          RAVDESS metadata and speaker-independent splits
+│   ├── features/                    eGeMAPS (openSMILE), SSL embeddings, augmentation
+│   ├── normalize.py                 per-speaker CMVN
+│   ├── models/                      MLP, CRNN, end-to-end fine-tuning (sklearn-style API)
+│   ├── evaluation.py, metrics.py    grouped cross-validation and metrics
+│   ├── domain_shift.py              EmoDB cross-corpus evaluation
+│   └── predict.py                   inference class and CLI
+├── tests/                 pytest suite
+├── demo/                  Gobbie web app (FastAPI and vanilla JS) and Cloud Run deploy
+├── informe/               IEEE-style report (LaTeX and PDF, Spanish)
+├── poster/                AI Fest 2026 poster
+└── splits/split.json      fixed train/val split by actor (seed 42)
+```
+
+Run the tests with `pytest`.
+
+## Authors
+
+**Bautista Garcia** and **Tomas Gonzalez**, Universidad de San Andrés.
+
+## Data
+
+- [RAVDESS](https://zenodo.org/record/1188976): Livingstone & Russo (2018), CC BY-NC-SA 4.0.
+- [EmoDB](http://emodb.bilderbar.info/): Burkhardt et al. (2005), Berlin Database of
+  Emotional Speech.
+
+Neither dataset is redistributed in this repository.
